@@ -3,8 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>График — Демидович</title>
+  <title>Решебник Демидовича</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
   <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -13,146 +16,185 @@
       background: var(--tg-theme-bg-color, #fff);
       color: var(--tg-theme-text-color, #000);
       padding: 16px;
+      line-height: 1.6;
     }
-    h2 {
-      font-size: 16px;
-      margin-bottom: 12px;
-      color: var(--tg-theme-hint-color, #666);
+    .header {
+      background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+      border-radius: 12px;
+      padding: 12px 16px;
+      margin-bottom: 20px;
     }
-    #plot { width: 100%; height: 400px; }
-    .controls {
-      margin-top: 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
+    .header h2 { font-size: 17px; font-weight: 600; }
+    .header p { font-size: 13px; color: var(--tg-theme-hint-color, #888); margin-top: 2px; }
+    .block-title {
+      font-size: 13px; font-weight: 600;
+      color: var(--tg-theme-hint-color, #888);
+      text-transform: uppercase; letter-spacing: 0.5px;
+      margin-bottom: 10px;
     }
-    label { font-size: 14px; color: var(--tg-theme-hint-color, #888); }
-    input[type=text] {
-      width: 100%;
-      padding: 10px;
+    .solution-text { font-size: 15px; line-height: 1.9; margin-bottom: 24px; }
+    .formulas-block {
+      background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+      border-radius: 12px; padding: 16px; margin-bottom: 24px;
+    }
+    .formula-item {
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(128,128,128,0.2);
+      overflow-x: auto; font-size: 16px;
+    }
+    .formula-item:last-child { border-bottom: none; }
+    #plot { width: 100%; height: 320px; border-radius: 12px; overflow: hidden; margin-bottom: 12px; }
+    .graph-controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+    .graph-controls input {
+      flex: 1; min-width: 120px; padding: 10px 12px;
       border: 1px solid var(--tg-theme-hint-color, #ccc);
-      border-radius: 8px;
-      font-size: 15px;
+      border-radius: 8px; font-size: 14px;
       background: var(--tg-theme-secondary-bg-color, #f5f5f5);
       color: var(--tg-theme-text-color, #000);
     }
-    button {
-      padding: 12px;
+    .graph-controls button {
+      padding: 10px 16px;
       background: var(--tg-theme-button-color, #2481cc);
       color: var(--tg-theme-button-text-color, #fff);
-      border: none;
-      border-radius: 8px;
-      font-size: 15px;
-      cursor: pointer;
+      border: none; border-radius: 8px; font-size: 14px; cursor: pointer;
     }
-    .error { color: #e53935; font-size: 13px; margin-top: 6px; }
+    .range-row {
+      display: flex; gap: 8px; align-items: center;
+      font-size: 13px; color: var(--tg-theme-hint-color, #888);
+    }
+    .range-row input { width: 70px; }
+    .loading { text-align: center; padding: 60px 20px; color: var(--tg-theme-hint-color, #888); }
+    .divider { height: 1px; background: rgba(128,128,128,0.2); margin: 20px 0; }
   </style>
 </head>
 <body>
-
-<h2 id="title">График функции</h2>
-<div id="plot"></div>
-
-<div class="controls">
-  <label>Функция f(x):</label>
-  <input type="text" id="func-input" placeholder="например: x^2 - 2*x + 1" />
-  <label>Диапазон x: от <input type="text" id="x-from" value="-5" style="width:60px"> до <input type="text" id="x-to" value="5" style="width:60px"></label>
-  <button onclick="plotGraph()">Построить</button>
-  <div class="error" id="error"></div>
-</div>
+<div id="app"><div class="loading">⏳ Загрузка...</div></div>
 
 <script>
   const tg = window.Telegram.WebApp;
   tg.ready();
   tg.expand();
 
-  // Получаем параметры из URL
-  const params = new URLSearchParams(window.location.search);
-  const volume = params.get('v');
-  const section = params.get('s');
-  const number = params.get('n');
+  const params  = new URLSearchParams(window.location.search);
+  const volume  = params.get('v') || '1';
+  const section = params.get('s') || '1';
+  const number  = params.get('n') || '1';
+  const dataParam = params.get('data');
 
-  if (volume && section && number) {
-    document.getElementById('title').textContent =
-      `График — Том ${volume}, §${section}, Задача ${number}`;
+  function renderFormula(latex) {
+    try {
+      const d = document.createElement('div');
+      katex.render(latex, d, { displayMode: true, throwOnError: false });
+      return d.innerHTML;
+    } catch(e) { return `<code>${latex}</code>`; }
   }
 
   function safeEval(expr, x) {
-    // Простой безопасный парсер математических выражений
     const safe = expr
-      .replace(/\^/g, '**')
-      .replace(/(\d)(x)/g, '$1*x')
-      .replace(/sin/g, 'Math.sin')
-      .replace(/cos/g, 'Math.cos')
-      .replace(/tan/g, 'Math.tan')
-      .replace(/sqrt/g, 'Math.sqrt')
-      .replace(/log/g, 'Math.log')
-      .replace(/abs/g, 'Math.abs')
-      .replace(/exp/g, 'Math.exp')
-      .replace(/pi/g, 'Math.PI')
-      .replace(/e(?![a-z])/g, 'Math.E');
-
-    try {
-      // eslint-disable-next-line no-new-func
-      return Function('x', `"use strict"; return (${safe})`)(x);
-    } catch {
-      return NaN;
-    }
+      .replace(/\^/g,'**').replace(/(\d)(x)/g,'$1*x')
+      .replace(/\bsin\b/g,'Math.sin').replace(/\bcos\b/g,'Math.cos')
+      .replace(/\btan\b/g,'Math.tan').replace(/\bsqrt\b/g,'Math.sqrt')
+      .replace(/\bln\b/g,'Math.log').replace(/\blog\b/g,'Math.log10')
+      .replace(/\babs\b/g,'Math.abs').replace(/\bexp\b/g,'Math.exp')
+      .replace(/\bpi\b/g,'Math.PI').replace(/\be\b/g,'Math.E');
+    try { return Function('x',`"use strict";return (${safe})`)(x); }
+    catch { return NaN; }
   }
 
-  function plotGraph() {
-    const expr = document.getElementById('func-input').value.trim();
-    const xFrom = parseFloat(document.getElementById('x-from').value);
-    const xTo = parseFloat(document.getElementById('x-to').value);
-    const errEl = document.getElementById('error');
-
-    if (!expr) { errEl.textContent = 'Введите функцию'; return; }
-    if (isNaN(xFrom) || isNaN(xTo) || xFrom >= xTo) {
-      errEl.textContent = 'Проверь диапазон x'; return;
-    }
-    errEl.textContent = '';
-
-    const steps = 400;
-    const xs = [], ys = [];
-    for (let i = 0; i <= steps; i++) {
-      const x = xFrom + (xTo - xFrom) * i / steps;
+  function plotGraph(expr, xFrom, xTo) {
+    const xs=[], ys=[];
+    for(let i=0; i<=500; i++){
+      const x = xFrom + (xTo-xFrom)*i/500;
       const y = safeEval(expr, x);
-      xs.push(x);
-      ys.push(isFinite(y) ? y : null);
+      xs.push(x); ys.push(isFinite(y)?y:null);
     }
-
-    const isDark = tg.colorScheme === 'dark';
-    const textColor = isDark ? '#eee' : '#333';
-    const gridColor = isDark ? '#444' : '#ddd';
-    const bgColor = isDark ? '#1e1e1e' : '#fff';
-
-    Plotly.newPlot('plot', [{
-      x: xs, y: ys,
-      type: 'scatter',
-      mode: 'lines',
-      line: { color: '#2481cc', width: 2.5 },
-      connectgaps: false,
-    }], {
-      paper_bgcolor: bgColor,
-      plot_bgcolor: bgColor,
-      font: { color: textColor, size: 12 },
-      xaxis: {
-        title: 'x',
-        gridcolor: gridColor,
-        zerolinecolor: gridColor,
-      },
-      yaxis: {
-        title: 'f(x)',
-        gridcolor: gridColor,
-        zerolinecolor: gridColor,
-      },
-      margin: { l: 50, r: 20, t: 20, b: 50 },
-    }, { responsive: true, displayModeBar: false });
+    const dark = tg.colorScheme==='dark';
+    const bg = dark?'#1e1e1e':'#fff';
+    const grid = dark?'#333':'#e0e0e0';
+    const text = dark?'#eee':'#333';
+    Plotly.newPlot('plot',[{x:xs,y:ys,type:'scatter',mode:'lines',
+      line:{color:'#2481cc',width:2.5},connectgaps:false}],
+      {paper_bgcolor:bg,plot_bgcolor:bg,font:{color:text,size:12},
+       xaxis:{title:'x',gridcolor:grid,zerolinecolor:grid},
+       yaxis:{title:'f(x)',gridcolor:grid,zerolinecolor:grid},
+       margin:{l:50,r:16,t:16,b:50}},
+      {responsive:true,displayModeBar:false});
   }
 
-  // Строим пример при загрузке
-  document.getElementById('func-input').value = 'x^2';
-  plotGraph();
+  window.onPlot = function() {
+    const expr  = document.getElementById('func-input').value.trim();
+    const xFrom = parseFloat(document.getElementById('x-from').value);
+    const xTo   = parseFloat(document.getElementById('x-to').value);
+    if(!expr || isNaN(xFrom) || isNaN(xTo) || xFrom>=xTo) return;
+    plotGraph(expr, xFrom, xTo);
+  };
+
+  function buildUI(data) {
+    const { solution, latex, has_graph } = data;
+    let html = `
+      <div class="header">
+        <h2>📖 Задача ${number}</h2>
+        <p>Том ${volume}, §${section} — Демидович</p>
+      </div>
+      <div class="block-title">Решение</div>
+      <div class="solution-text" id="sol">${solution.replace(/\n/g,'<br>')}</div>`;
+
+    if(latex && latex.length) {
+      html += `<div class="formulas-block"><div class="block-title">📐 Ключевые формулы</div>`;
+      latex.forEach((f,i) => { html += `<div class="formula-item" id="f${i}"></div>`; });
+      html += `</div>`;
+    }
+
+    if(has_graph) {
+      html += `<div class="divider"></div>
+        <div class="block-title">📈 График</div>
+        <div id="plot"></div>
+        <div class="graph-controls">
+          <input type="text" id="func-input" placeholder="f(x), например: x^2"/>
+          <button onclick="onPlot()">Построить</button>
+        </div>
+        <div class="range-row">
+          x от <input type="text" id="x-from" value="-5">
+          до <input type="text" id="x-to" value="5">
+        </div>`;
+    }
+
+    document.getElementById('app').innerHTML = html;
+
+    // Рендер формул
+    if(latex && latex.length) {
+      latex.forEach((f,i) => {
+        const el = document.getElementById(`f${i}`);
+        if(el) el.innerHTML = renderFormula(f);
+      });
+    }
+
+    // KaTeX в тексте решения
+    renderMathInElement(document.getElementById('sol'), {
+      delimiters: [
+        {left:'\\[',right:'\\]',display:true},
+        {left:'\\(',right:'\\)',display:false},
+        {left:'$$',right:'$$',display:true},
+        {left:'$',right:'$',display:false},
+      ],
+      throwOnError: false,
+    });
+
+    if(has_graph) plotGraph('x^2', -5, 5);
+  }
+
+  // Инициализация
+  if(dataParam) {
+    try { buildUI(JSON.parse(atob(dataParam))); }
+    catch(e) { document.getElementById('app').innerHTML = `<p style="color:red">Ошибка: ${e.message}</p>`; }
+  } else {
+    // Демо-режим (прямое открытие в браузере)
+    buildUI({
+      solution: 'Доказательство методом математической индукции.\n\nБаза: при $n = 1$: левая часть равна $1$, правая $\\frac{1 \\cdot 2}{2} = 1$. Верно.\n\nШаг индукции: предположим истинность при $n = k$:\n$$1 + 2 + \\cdots + k = \\frac{k(k+1)}{2}$$\nТогда для $n = k+1$:\n$$1 + 2 + \\cdots + k + (k+1) = \\frac{k(k+1)}{2} + (k+1) = \\frac{(k+1)(k+2)}{2}$$\nЧто и требовалось доказать.',
+      latex: ['1 + 2 + \\cdots + n = \\frac{n(n+1)}{2}'],
+      has_graph: false,
+    });
+  }
 </script>
 </body>
 </html>
