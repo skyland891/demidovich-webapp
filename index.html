@@ -186,9 +186,14 @@
   // Инициализация
   if(dataParam) {
     try {
-      // URL-safe base64: заменяем обратно - и _ на + и /
+      // URL-safe base64 → UTF-8 декодирование
       const normalized = dataParam.replace(/-/g, '+').replace(/_/g, '/');
-      buildUI(JSON.parse(atob(normalized)));
+      const jsonStr = decodeURIComponent(
+        atob(normalized).split('').map(c =>
+          '%' + c.charCodeAt(0).toString(16).padStart(2, '0')
+        ).join('')
+      );
+      buildUI(JSON.parse(jsonStr));
     }
     catch(e) { document.getElementById('app').innerHTML = `<p style="color:red">Ошибка: ${e.message}</p>`; }
   } else {
