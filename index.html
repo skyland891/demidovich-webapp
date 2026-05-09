@@ -185,7 +185,11 @@
 
   // Инициализация
   if(dataParam) {
-    try { buildUI(JSON.parse(atob(dataParam))); }
+    try {
+      // URL-safe base64: заменяем обратно - и _ на + и /
+      const normalized = dataParam.replace(/-/g, '+').replace(/_/g, '/');
+      buildUI(JSON.parse(atob(normalized)));
+    }
     catch(e) { document.getElementById('app').innerHTML = `<p style="color:red">Ошибка: ${e.message}</p>`; }
   } else {
     // Демо-режим (прямое открытие в браузере)
